@@ -1,9 +1,12 @@
 import express from 'express';
 import { loginUser, registerUser } from '../controllers/authController.js';
+import { registerValidation } from '../validation/auth.validation.js';
+import { validate } from '../middleware/validation.middleware.js';
 
-const router = express.Router();
+const authRoutes = express.Router({ mergeParams: true });
 
-router.post('/register', registerUser);
-router.post('/login', loginUser);
+authRoutes.post('/register', validate(registerValidation), registerUser);
 
-export default router;
+authRoutes.post('/login', loginUser);
+
+export default authRoutes;

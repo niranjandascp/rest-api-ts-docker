@@ -7,6 +7,9 @@ import connectDB from "./db/index.js";
 import authRoutes from "./routes/authRoutes.js";
 import userRoutes from "./routes/userRoutes.js";
 import productRoutes from "./routes/productRoutes.js";
+import { authLimiter } from "./middleware/rateLimiter.middleware.js";
+import studentRoutes from "./routes/studentRoutes.js";
+import { errorHandler } from "./middleware/error.middleware.js";
 
 // ✅ MUST BE FIRST
 dotenv.config();
@@ -21,9 +24,16 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // Routes
-app.use('/api/auth', authRoutes);
+app.use('/api/auth', authLimiter, authRoutes);
+
 app.use('/api/users', userRoutes);
+
 app.use('/api/products', productRoutes);
+
+app.use('/api/students', studentRoutes);
+
+// Error handling middleware
+app.use(errorHandler);
 
 // Start server
 await connectDB();

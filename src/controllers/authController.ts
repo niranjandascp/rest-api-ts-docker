@@ -1,36 +1,35 @@
 import type { Request, Response } from 'express';
+import jwt from 'jsonwebtoken';
+import User from '../models/User.js';
 import type {
   RegisterRequestBody,
   LoginRequestBody,
-  IUserDocument,
   UserResponse,
+  IUserDocument,
 } from '../interfaces/user.interface.js';
 
-import User from '../models/User.js';
-import jwtPkg from 'jsonwebtoken';
-
-const jwt = jwtPkg as typeof import('jsonwebtoken');
-
-// ================= REGISTER =================
 export const registerUser = async (
   req: Request<{}, {}, RegisterRequestBody>,
-  res: Response
+  res: Response,
 ): Promise<void> => {
+  console.log('>>>> Register user function called');
+
   try {
     const { username, email, password, role, age } = req.body;
 
+    // Simple validation
     if (!username || !email || !password) {
       res.status(400).json({ message: 'Please fill all required fields' });
       return;
     }
 
     const existingUser = await User.findOne({ email });
-
     if (existingUser) {
       res.status(400).json({ message: 'User already exists' });
       return;
     }
 
+    // Create user
     const user: IUserDocument = await User.create({
       username,
       email,
@@ -39,28 +38,27 @@ export const registerUser = async (
       age: age || null,
     });
 
-    res.status(201).json({
+    const responseData: UserResponse = {
       _id: user._id.toString(),
       username: user.username,
       email: user.email,
       role: user.role,
       age: user.age,
-    });
+    };
+
+    res.status(201).json(responseData);
   } catch (error) {
-    console.error('Register Error 👉', error);
+    console.error('Error in registerUser:', error);
     res.status(500).json({ message: 'Server error' });
   }
 };
 
-// ================= LOGIN =================
 export const loginUser = async (
   req: Request<{}, {}, LoginRequestBody>,
-  res: Response
+  res: Response,
 ): Promise<void> => {
   try {
     const { email, password } = req.body;
-
-    console.log("BODY:", req.body);
 
     if (!email || !password) {
       res.status(400).json({ message: 'Email and password required' });
@@ -69,49 +67,33 @@ export const loginUser = async (
 
     const user = await User.findOne({ email });
 
-    console.log("USER:", user);
-
-    if (!user) {
-      res.status(401).json({ message: 'User not found' });
-      return;
-    }
-
-    const isMatch = await user.matchPassword(password);
-    console.log("PASSWORD MATCH:", isMatch);
-
-    if (!isMatch) {
+    if (!user || !(await user.matchPassword(password))) {
       res.status(401).json({ message: 'Invalid credentials' });
       return;
     }
 
-    // ✅ MUST EXIST
-    if (!process.env.JWT_SECRET) {
-      throw new Error('JWT_SECRET is not defined');
-    }
-
-    // console.log("SECRET:", process.env.JWT_SECRET);
-
     const token = jwt.sign(
       {
-        id: user._id.toString(),
+        id: user._id,
         name: user.username,
         admin: user.role === 'admin',
       },
-      process.env.JWT_SECRET,
-      { expiresIn: '1d' }
+      process.env.JWT_SECRET as string,
+      { expiresIn: '1d' },
     );
 
-    res.status(200).json({
+    const responseData: UserResponse = {
       _id: user._id.toString(),
       username: user.username,
       email: user.email,
       role: user.role,
       age: user.age,
       token,
-    });
+    };
 
+    res.status(200).json(responseData);
   } catch (error) {
-    console.error('Login Error 👉', error);
+    console.error('Error in loginUser:', error);
     res.status(500).json({ message: 'Server error' });
   }
 };
