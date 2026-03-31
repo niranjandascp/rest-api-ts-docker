@@ -1,110 +1,57 @@
-import type { Request, Response } from 'express';
-import type {
-  RegisterRequestBody,
-  LoginRequestBody,
-  IUserDocument,
-  UserResponse,
-} from '../interfaces/user.interface.js';
+import type { Request, Response, NextFunction } from 'express';
+import jwtPkg from 'jsonwebtoken';
+import type { JwtPayload } from 'jsonwebtoken';
 
-import User from '../models/User.js';
+const jwt = jwtPkg as typeof import('jsonwebtoken');
 
-// ✅ FIX: Proper import for ESM + TS
-import jwt from 'jsonwebtoken';
+declare global {
+  namespace Express {
+    interface Request {
+      user?: {
+        id: string;
+        name: string;
+        admin: boolean;
+        iat?: number;
+        exp?: number;
+      };
+    }
+  }
+}
 
-// ================= REGISTER =================
-export const registerUser = async (
-  req: Request<{}, {}, RegisterRequestBody>,
-  res: Response
-): Promise<void> => {
+export const verifyToken = (req: Request, res: Response, next: NextFunction): void | Response => {
+  const authHeader = req.headers.authorization;
+
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ message: 'Unauthorized: No token provided' });
+  }
+
+  const token = authHeader.split(' ')[1];
+
   try {
-    const { username, email, password, role, age } = req.body;
-
-    // Validation
-    if (!username || !email || !password) {
-      res.status(400).json({ message: 'Please fill all required fields' });
-      return;
-    }
-
-    const existingUser = await User.findOne({ email });
-
-    if (existingUser) {
-      res.status(400).json({ message: 'User already exists' });
-      return;
-    }
-
-    // Create user
-    const user: IUserDocument = await User.create({
-      username,
-      email,
-      password,
-      role: role || 'user',
-      age: age || null,
-    });
-
-    const responseData: UserResponse = {
-      _id: user._id.toString(),
-      username: user.username,
-      email: user.email,
-      role: user.role,
-      age: user.age,
+    const decoded = jwt.verify(token, process.env.JWT_SECRET as string) as JwtPayload & {
+      id: string;
+      name: string;
+      admin: boolean;
     };
 
-    res.status(201).json(responseData);
-  } catch (error) {
-    console.error('Error in registerUser:', error);
-    res.status(500).json({ message: 'Server error' });
+    req.user = decoded;
+    next();
+  } catch (err) {
+    console.log(err);
+    return res.status(403).json({ message: 'Invalid or expired token' });
   }
 };
 
-// ================= LOGIN =================
-export const loginUser = async (
-  req: Request<{}, {}, LoginRequestBody>,
-  res: Response
-): Promise<void> => {
-  try {
-    const { email, password } = req.body;
-
-    // Validation
-    if (!email || !password) {
-      res.status(400).json({ message: 'Email and password required' });
-      return;
+export const verifyAdmin = (req: Request, res: Response, next: NextFunction): void | Response => {
+  verifyToken(req, res, () => {
+    if (req.user?.admin) {
+      next();
+    } else {
+      return res.status(403).json({ message: 'Access denied: Admins only' });
     }
+  });
+};
 
-    const user = await User.findOne({ email });
-
-    if (!user || !(await user.matchPassword(password))) {
-      res.status(401).json({ message: 'Invalid credentials' });
-      return;
-    }
-
-    // ✅ IMPORTANT: Ensure JWT_SECRET exists
-    if (!process.env.JWT_SECRET) {
-      throw new Error('JWT_SECRET is not defined');
-    }
-
-    // Generate Token
-    const token = jwt.sign(
-      {
-        id: user._id.toString(),
-        name: user.username,
-        admin: user.role === 'admin',
-      },
-      process.env.JWT_SECRET,
-      { expiresIn: '1d' }
-    );
-
-    const responseData: UserResponse = {
-      _id: user._id.toString(),
-      username: user.username,
-      email: user.email,
-      role: user.role,
-      age: user.age,
-      token,
-    };
-
-    res.status(200).json(responseData);
-  } catch (error) {
-    console.error('Error in loginUser:', error);
-    res.status(500).json({ message: 'Server error' });
-  }
+export const verifyUser = (req: Request, res: Response, next: NextFunction): void | Response => {
+  verifyToken(req, res, () => next());
 };
